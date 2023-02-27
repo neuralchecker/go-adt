@@ -1,9 +1,11 @@
-package hashset
+package set
 
 import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/neuralchecker/go-adt/iterable"
 )
+
+const lambda = 0.75
 
 type Hashable interface {
 	Hash() int
@@ -14,7 +16,7 @@ type hashSet[T Hashable] struct {
 	elements int
 }
 
-type HashSet[T Hashable] interface {
+type Set[T any] interface {
 	// Add adds an element to the set.
 	Add(element T)
 	// Clear removes all elements from the set.
@@ -27,18 +29,23 @@ type HashSet[T Hashable] interface {
 	Remove(element T)
 	// Size returns the number of elements in the set.
 	Size() int
+	ToSlice() []T
 	Iterator() iterable.Iterator[T]
 }
 
-func NewHashSet[T Hashable]() HashSet[T] {
+func NewUnordered[T Hashable]() Set[T] {
 	return &hashSet[T]{
-		arr: make([][]T, 0, 49),
+		arr: make([][]T, 49),
 	}
 }
 
-func NewHashSetSize[T Hashable](size int) HashSet[T] {
+func NewUnorderedSize[T Hashable](size int) Set[T] {
+	size = size*2 - 1
+	if size < 49 {
+		size = 49
+	}
 	return &hashSet[T]{
-		arr: make([][]T, 0, size*2-1),
+		arr: make([][]T, size),
 	}
 }
 
@@ -52,11 +59,15 @@ func (s *hashSet[T]) Add(element T) {
 	}
 	s.arr[index] = append(s.arr[index], element)
 	s.elements++
+
+	if float64(s.elements)/float64(len(s.arr)) > lambda {
+		s.rehash()
+	}
 }
 
 // Clear implements HashSet
 func (s *hashSet[T]) Clear() {
-	s.arr = make([][]T, 0, 49)
+	s.arr = make([][]T, 49)
 	s.elements = 0
 }
 
@@ -93,11 +104,25 @@ func (s *hashSet[T]) Size() int {
 	return s.elements
 }
 
-// Iterator implements HashSet
-func (s *hashSet[T]) Iterator() iterable.Iterator[T] {
+// ToSlice implements HashSet
+func (s *hashSet[T]) ToSlice() []T {
 	ts := make([]T, 0, s.elements)
 	for _, arr := range s.arr {
 		ts = append(ts, arr...)
 	}
-	return iterable.SliceIterator(ts)
+	return ts
+}
+
+// Iterator implements HashSet
+func (s *hashSet[T]) Iterator() iterable.Iterator[T] {
+	return iterable.SliceIterator(s.ToSlice())
+}
+
+func (s *hashSet[T]) rehash() {
+	it := s.Iterator()
+	s.arr = make([][]T, len(s.arr)*2-1)
+	s.elements = 0
+	for it.HasNext() {
+		s.Add(it.Next())
+	}
 }

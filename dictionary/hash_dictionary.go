@@ -1,4 +1,4 @@
-package hashmap
+package dictionary
 
 import (
 	"github.com/google/go-cmp/cmp"
@@ -11,8 +11,8 @@ type Hashable interface {
 
 const lambda float64 = 0.75
 
-// HashMap is a map for use when you don't have a natively hashable type
-type HashMap[K Hashable, V any] interface {
+// Dictionary is a map for use when you don't have a natively hashable type
+type Dictionary[K any, V any] interface {
 	// Get returns the value associated with the given key.
 	Get(key K) (V, bool)
 	// Set sets the value associated with the given key.
@@ -33,9 +33,13 @@ type HashMap[K Hashable, V any] interface {
 	Iterator() iterable.Iterator[pair[K, V]]
 }
 
-type pair[K Hashable, V any] struct {
-	key   K
-	value V
+type pair[K any, V any] struct {
+	Key   K
+	Value V
+}
+
+func (p pair[K, V]) Unwrap() (K, V) {
+	return p.Key, p.Value
 }
 
 type hMap[K Hashable, V any] struct {
@@ -43,21 +47,25 @@ type hMap[K Hashable, V any] struct {
 	elements int
 }
 
-func NewHashMap[K Hashable, V any]() HashMap[K, V] {
+func NewUnordered[K Hashable, V any]() Dictionary[K, V] {
 	return &hMap[K, V]{
-		arr: make([][]pair[K, V], 0, 49),
+		arr: make([][]pair[K, V], 49),
 	}
 }
 
-func NewHashMapSize[K Hashable, V any](size int) HashMap[K, V] {
+func NewUnorderedSize[K Hashable, V any](size int) Dictionary[K, V] {
+	size = size*2 - 1
+	if size < 49 {
+		size = 49
+	}
 	return &hMap[K, V]{
-		arr: make([][]pair[K, V], 0, size*2-1),
+		arr: make([][]pair[K, V], size),
 	}
 }
 
 // Clear implements HashMap
 func (m *hMap[K, V]) Clear() {
-	m.arr = make([][]pair[K, V], 0, 49)
+	m.arr = make([][]pair[K, V], 49)
 	m.elements = 0
 }
 
@@ -65,8 +73,8 @@ func (m *hMap[K, V]) Clear() {
 func (m *hMap[K, V]) Get(key K) (value V, ok bool) {
 	index := key.Hash() % len(m.arr)
 	for _, p := range m.arr[index] {
-		if cmp.Equal(p.key, key) {
-			return p.value, true
+		if cmp.Equal(p.Key, key) {
+			return p.Value, true
 		}
 	}
 	return value, false
@@ -82,7 +90,7 @@ func (m *hMap[K, V]) Keys() []K {
 	keys := make([]K, 0, m.elements)
 	for _, bucket := range m.arr {
 		for _, p := range bucket {
-			keys = append(keys, p.key)
+			keys = append(keys, p.Key)
 		}
 	}
 	return keys
@@ -92,7 +100,7 @@ func (m *hMap[K, V]) Keys() []K {
 func (m *hMap[K, V]) Remove(key K) {
 	index := key.Hash() % len(m.arr)
 	for i, p := range m.arr[index] {
-		if cmp.Equal(p.key, key) {
+		if cmp.Equal(p.Key, key) {
 			m.arr[index] = append(m.arr[index][:i], m.arr[index][i+1:]...)
 			m.elements--
 			return
@@ -104,15 +112,15 @@ func (m *hMap[K, V]) Remove(key K) {
 func (m *hMap[K, V]) Set(key K, value V) {
 	index := key.Hash() % len(m.arr)
 	for i, p := range m.arr[index] {
-		if cmp.Equal(p.key, key) {
-			m.arr[index][i].value = value
+		if cmp.Equal(p.Key, key) {
+			m.arr[index][i].Value = value
 			return
 		}
 	}
-	m.arr[index] = append(m.arr[index], pair[K, V]{key: key, value: value})
+	m.arr[index] = append(m.arr[index], pair[K, V]{Key: key, Value: value})
 	m.elements++
 
-	if float64(m.elements)/float64(cap(m.arr)) > lambda {
+	if float64(m.elements)/float64(len(m.arr)) > lambda {
 		m.rehash()
 	}
 }
@@ -127,7 +135,7 @@ func (m *hMap[K, V]) Values() []V {
 	values := make([]V, 0, m.elements)
 	for _, bucket := range m.arr {
 		for _, p := range bucket {
-			values = append(values, p.value)
+			values = append(values, p.Value)
 		}
 	}
 	return values
@@ -135,11 +143,11 @@ func (m *hMap[K, V]) Values() []V {
 
 func (m *hMap[K, V]) rehash() {
 	oldIt := m.Iterator()
-	m.arr = make([][]pair[K, V], 0, cap(m.arr)*2-1)
+	m.arr = make([][]pair[K, V], len(m.arr)*2-1)
 	m.elements = 0
 	for oldIt.HasNext() {
 		p := oldIt.Next()
-		m.Set(p.key, p.value)
+		m.Set(p.Key, p.Value)
 	}
 }
 
